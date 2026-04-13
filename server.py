@@ -80,6 +80,8 @@ async def send_message(message: str) -> Dict[str, Any]:
     }
 
 
+app = mcp.sse_app()
+
 # ---- Entry ----
 
 if __name__ == "__main__":
