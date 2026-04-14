@@ -4,19 +4,89 @@ This is a minimal MCP (Model Context Protocol) server for Context Layer (CL).
 
 It exposes one tool:
 
-- **`send_message(message: string)`** — This tool sends a message to Context Layer and returns the response.
+```text
+send_message(
+  message?: string,
+  step_description?: string,
+  state?: object,
+  context?: string,
+  constraint?: string,
+  workflow_end?: boolean,
+  stateless?: boolean
+)
+```
 
-## CL Backend usage
+The tool sends a request to Context Layer and returns **`output_text`** plus **`raw`** (the full parsed JSON body from CL). The response must include **`output_text`** or the tool raises an error.
 
-Default API base: **`https://cl.kaisek.com`** (override with `CL_BASE_URL`).
+## Input Modes
 
-The server calls **`POST /api/flow`** with body `{"message": "<your message>"}`. Requests send the **`x-api-key`** header (from `CL_API_KEY`). On success, the tool returns **`output_text`** and **`raw`** (the full parsed JSON body from CL).
+### 1. Plain message mode
 
-### Usage example
+Pass a natural-language string as **`message`**. Do not set **`step_description`** in the same call.
 
-From any MCP client, call **`send_message`** with a single string argument, for example:
+Example:
 
 - `message`: `"Hello from my agent"`
+
+### 2. Structured mode (State Bridge)
+
+Pass **`step_description`** and **`state`** (a JSON object). The MCP server converts these into a single deterministic natural-language **`message`** before calling the backend. Optionally add **`context`** and **`constraint`**; they only apply on this path.
+
+Example (conceptual MCP call):
+
+```python
+send_message(
+    step_description="Generate invoice",
+    state={"amount": 100, "currency": "USD"},
+    context="User checkout flow",
+    constraint="Amount must be validated",
+)
+```
+
+The HTTP body sent to CL always contains a final **`message`** string; structured fields are not sent separately.
+
+## Flags
+
+- **`workflow_end`** — When `true`, the JSON body includes **`workflowEnd: true`**, which terminates the Flow on the CL side.
+- **`stateless`** — When `true`, the JSON body includes **`stateless: true`**, so the run happens outside the workflow (Flow only).
+- You **cannot** set both **`workflow_end`** and **`stateless`** to `true` in the same call; the tool rejects that combination.
+
+## Validation rules
+
+- You must provide **`message`** or **`step_description`** (after trimming), not neither.
+- You cannot provide both **`message`** and **`step_description`** (non-empty) in the same call.
+- **`step_description`** requires **`state`**, and **`state`** must be an object (`dict`).
+- After building the final text, **`message`** must not be empty (whitespace-only is rejected).
+- **`workflow_end`** and **`stateless`** cannot both be `true`.
+
+## CL backend API
+
+The server calls:
+
+**`POST /api/execute`**
+
+Default base URL: **`https://cl.kaisek.com`** (override with **`CL_BASE_URL`**).
+
+**Headers**
+
+| Header           | Value                         |
+|------------------|-------------------------------|
+| `x-api-key`      | From **`CL_API_KEY`** (required) |
+| `Content-Type`   | `application/json`            |
+
+**Body** (JSON)
+
+```json
+{
+  "message": "...",
+  "workflowEnd": true,
+  "stateless": true
+}
+```
+
+- **`message`** is always required in the request body and is always the **final** natural-language string sent to CL.
+- **`workflowEnd`** and **`stateless`** are optional; they are omitted when the corresponding tool arguments are false/absent.
+- The MCP layer performs structured → NL conversion for State Bridge calls; the API only sees the composed **`message`**.
 
 ## Setup
 
